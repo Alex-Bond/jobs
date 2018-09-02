@@ -9,34 +9,34 @@ import (
 	"github.com/spiral/jobs"
 )
 
-// Local run queue using local goroutines.
-type Local struct {
+// RedisTestCopuFromLocalPhpTalkwithANton run queue using local goroutines.
+type RedisTestCopuFromLocalPhpTalkwithANton struct {
 	mu      sync.Mutex
 	threads int
 	wg      sync.WaitGroup
-	queue   chan entry
+	queue   chan entryTest
 	exec    jobs.Handler
 	error   jobs.ErrorHandler
 }
 
-type entry struct {
+type entryTest struct {
 	id  string
 	job *jobs.Job
 }
 
 // Init configures local job broker.
-func (l *Local) Init() (bool, error) {
+func (l *RedisTestCopuFromLocalPhpTalkwithANton) Init() (bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	l.queue = make(chan entry)
+	l.queue = make(chan entryTest)
 
 	return true, nil
 }
 
-// Handle configures broker with list of pipelines to listen and handler function. Local broker groups all pipelines
+// Handle configures broker with list of pipelines to listen and handler function. RedisTestCopuFromLocalPhpTalkwithANton broker groups all pipelines
 // together.
-func (l *Local) Handle(pipelines []*jobs.Pipeline, h jobs.Handler, f jobs.ErrorHandler) error {
+func (l *RedisTestCopuFromLocalPhpTalkwithANton) Handle(pipelines []*jobs.Pipeline, h jobs.Handler, f jobs.ErrorHandler) error {
 
 	switch {
 	case len(pipelines) == 0:
@@ -59,7 +59,7 @@ func (l *Local) Handle(pipelines []*jobs.Pipeline, h jobs.Handler, f jobs.ErrorH
 }
 
 // Serve local broker.
-func (l *Local) Serve() error {
+func (l *RedisTestCopuFromLocalPhpTalkwithANton) Serve() error {
 	for i := 0; i < l.threads; i++ {
 		l.wg.Add(1)
 		go l.listen()
@@ -70,7 +70,7 @@ func (l *Local) Serve() error {
 }
 
 // Stop local broker.
-func (l *Local) Stop() {
+func (l *RedisTestCopuFromLocalPhpTalkwithANton) Stop() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -80,17 +80,15 @@ func (l *Local) Stop() {
 }
 
 // Push new job to queue
-func (l *Local) Push(p *jobs.Pipeline, j *jobs.Job) (string, error) {
+func (l *RedisTestCopuFromLocalPhpTalkwithANton) Push(p *jobs.Pipeline, j *jobs.Job) (string, error) {
 	id := uuid.NewV4()
 
-	go func() {
-		l.queue <- entry{id: id.String(), job: j}
-		}()
+	go func() { l.queue <- entryTest{id: id.String(), job: j} }()
 
 	return id.String(), nil
 }
 
-func (l *Local) listen() {
+func (l *RedisTestCopuFromLocalPhpTalkwithANton) listen() {
 	defer l.wg.Done()
 	for q := range l.queue {
 		id, job := q.id, q.job
@@ -114,6 +112,6 @@ func (l *Local) listen() {
 			time.Sleep(job.Options.RetryDuration())
 		}
 
-		l.queue <- entry{id: id, job: job}
+		l.queue <- entryTest{id: id, job: job}
 	}
 }
