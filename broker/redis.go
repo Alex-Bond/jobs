@@ -5,17 +5,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gomodule/redigo/redis"
 	"github.com/satori/go.uuid"
 	"github.com/spiral/jobs"
 )
 
-// RedisTestCopuFromLocalPhpTalkwithANton run queue using local goroutines.
-type RedisTestCopuFromLocalPhpTalkwithANton struct {
-	mu      sync.Mutex
+// Redis run queue using redis pool.
+type Redis struct {
+	sync.Mutex
+	sync.WaitGroup
+	pool    *redis.Pool
 	threads int
-	wg      sync.WaitGroup
 	queue   chan entryTest
-	exec    jobs.Handler
+	handler jobs.Handler
 	error   jobs.ErrorHandler
 }
 
@@ -25,19 +27,31 @@ type entryTest struct {
 }
 
 // Init configures local job broker.
-func (l *RedisTestCopuFromLocalPhpTalkwithANton) Init() (bool, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	l.queue = make(chan entryTest)
-
+func (l *Redis) Init(cfg *RedisConfig) (bool, error) {
+	l.pool = newRedisPool(cfg.Address)
 	return true, nil
 }
 
-// Handle configures broker with list of pipelines to listen and handler function. RedisTestCopuFromLocalPhpTalkwithANton broker groups all pipelines
-// together.
-func (l *RedisTestCopuFromLocalPhpTalkwithANton) Handle(pipelines []*jobs.Pipeline, h jobs.Handler, f jobs.ErrorHandler) error {
+func newRedisPool(address string) *redis.Pool {
+	return &redis.Pool{
+		MaxActive:   10,
+		MaxIdle:     10,
+		IdleTimeout: 10 * time.Second,
+		Dial: func() (redis.Conn, error) {
+			conn, err := redis.Dial("tcp", address)
+			if err != nil {
+				return nil, err
+			}
 
+			return conn, nil
+		},
+		Wait: true,
+	}
+}
+
+// Handle configures broker with list of pipelines to listen and handler function. Redis broker groups all pipelines
+// together.
+func (l *Redis) Handle(pipelines []*jobs.Pipeline, h jobs.Handler, f jobs.ErrorHandler) error {
 	switch {
 	case len(pipelines) == 0:
 		// no pipelines to handled
@@ -53,26 +67,33 @@ func (l *RedisTestCopuFromLocalPhpTalkwithANton) Handle(pipelines []*jobs.Pipeli
 		return errors.New("local queue handler expects exactly one pipeline")
 	}
 
-	l.exec = h
+	l.handler = h
 	l.error = f
 	return nil
 }
 
 // Serve local broker.
-func (l *RedisTestCopuFromLocalPhpTalkwithANton) Serve() error {
+func (l *Redis) Serve() error {
 	for i := 0; i < l.threads; i++ {
-		l.wg.Add(1)
+		l.Add(1)
 		go l.listen()
 	}
 
-	l.wg.Wait()
+	l.Wait()
 	return nil
 }
 
 // Stop local broker.
-func (l *RedisTestCopuFromLocalPhpTalkwithANton) Stop() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+func (l *Redis) Stop() {
+	err := l.pool.Close()
+
+	if err != nil {
+
+	}
+
+
+	l.Lock()
+	defer l.Unlock()
 
 	if l.queue != nil {
 		close(l.queue)
@@ -80,16 +101,18 @@ func (l *RedisTestCopuFromLocalPhpTalkwithANton) Stop() {
 }
 
 // Push new job to queue
-func (l *RedisTestCopuFromLocalPhpTalkwithANton) Push(p *jobs.Pipeline, j *jobs.Job) (string, error) {
+func (l *Redis) Push(p *jobs.Pipeline, j *jobs.Job) (string, error) {
 	id := uuid.NewV4()
 
-	go func() { l.queue <- entryTest{id: id.String(), job: j} }()
+	go func() {
+		l.queue <- entryTest{id: id.String(), job: j}
+	}()
 
 	return id.String(), nil
 }
 
-func (l *RedisTestCopuFromLocalPhpTalkwithANton) listen() {
-	defer l.wg.Done()
+func (l *Redis) listen() {
+	defer l.Done()
 	for q := range l.queue {
 		id, job := q.id, q.job
 
@@ -98,7 +121,7 @@ func (l *RedisTestCopuFromLocalPhpTalkwithANton) listen() {
 		}
 
 		// local broker does not support job timeouts yet
-		err := l.exec(id, job)
+		err := l.handler(id, job)
 		if err == nil {
 			continue
 		}

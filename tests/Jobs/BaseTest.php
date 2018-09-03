@@ -52,7 +52,7 @@ abstract class BaseTest extends TestCase
             'data' => 100
         ]), new Options(1));
 
-        $this->assertNotEmpty($id);
+        $this->($id);
 
         $this->assertTrue($this->waitForJob() > 1);
         $this->assertFileExists(LocalJob::JOB_FILE);
