@@ -37,6 +37,11 @@ func (j *Job) Context(id string) ([]byte, error) {
 	}{ID: id, Job: j.Job, Attempt: j.Attempt})
 }
 
+// Serialize job to byte json
+func (j *Job) Serialize() ([]byte, error) {
+	return json.Marshal(j)
+}
+
 // CanRetry must return true if broker is allowed to re-run the job.
 func (j *Job) CanRetry() bool {
 	return j.Attempt >= j.Options.MaxAttempts

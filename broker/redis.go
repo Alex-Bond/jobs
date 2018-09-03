@@ -14,11 +14,12 @@ import (
 type Redis struct {
 	sync.Mutex
 	sync.WaitGroup
-	pool    *redis.Pool
-	threads int
-	queue   chan entryTest
-	handler jobs.Handler
-	error   jobs.ErrorHandler
+	namespace string
+	pool      *redis.Pool
+	threads   int
+	queue     chan entryTest
+	handler   jobs.Handler
+	error     jobs.ErrorHandler
 }
 
 type entryTest struct {
@@ -28,13 +29,38 @@ type entryTest struct {
 
 // Init configures local job broker.
 func (l *Redis) Init(cfg *RedisConfig) (bool, error) {
-	l.pool = newRedisPool(cfg.Address)
+	l.namespace = "spiral"
+	l.threads = 10
+	l.pool = newRedisPool(cfg.Address, l.threads, l.namespace)
+
+	cleanNamespace(l.namespace, l.pool)
+
 	return true, nil
 }
 
-func newRedisPool(address string) *redis.Pool {
+func cleanNamespace(namespace string, pool *redis.Pool) {
+	conn := pool.Get()
+	defer conn.Close()
+
+	allKeysInNamespace := namespace + "*"
+
+	keys, err := redis.Strings(conn.Do("KEYS", allKeysInNamespace))
+	if err != nil {
+		// TODO create error message
+		panic(err)
+	}
+
+	for i := 0; i < len(keys); i++ {
+		if _, err := conn.Do("DEL", keys[i]); err != nil {
+			// TODO create error message
+			panic(err)
+		}
+	}
+}
+
+func newRedisPool(address string, threads int, namespace string) *redis.Pool {
 	return &redis.Pool{
-		MaxActive:   10,
+		MaxActive:   threads,
 		MaxIdle:     10,
 		IdleTimeout: 10 * time.Second,
 		Dial: func() (redis.Conn, error) {
@@ -74,6 +100,9 @@ func (l *Redis) Handle(pipelines []*jobs.Pipeline, h jobs.Handler, f jobs.ErrorH
 
 // Serve local broker.
 func (l *Redis) Serve() error {
+	conn := l.pool.Get()
+	defer conn.Close()
+
 	for i := 0; i < l.threads; i++ {
 		l.Add(1)
 		go l.listen()
@@ -91,7 +120,6 @@ func (l *Redis) Stop() {
 
 	}
 
-
 	l.Lock()
 	defer l.Unlock()
 
@@ -102,6 +130,8 @@ func (l *Redis) Stop() {
 
 // Push new job to queue
 func (l *Redis) Push(p *jobs.Pipeline, j *jobs.Job) (string, error) {
+	conn := l.pool.Get()
+
 	id := uuid.NewV4()
 
 	go func() {

@@ -1,13 +1,13 @@
 package broker
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/beanstalkd/go-beanstalk"
 	"github.com/spiral/jobs"
 	"sync"
-	"github.com/beanstalkd/go-beanstalk"
-	"errors"
 	"time"
-	"encoding/json"
-	"fmt"
 )
 
 // Beanstalk run jobs using Beanstalk service.
@@ -93,6 +93,7 @@ func (b *Beanstalk) Stop() {
 
 // Push new job to queue
 func (b *Beanstalk) Push(p *jobs.Pipeline, j *jobs.Job) (string, error) {
+	// TODO replace with json.Serialize ???
 	data, err := json.Marshal(j)
 	if err != nil {
 		return "", err
