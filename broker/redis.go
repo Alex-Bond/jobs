@@ -1,7 +1,9 @@
 package broker
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -16,15 +18,10 @@ type Redis struct {
 	sync.WaitGroup
 	namespace string
 	pool      *redis.Pool
-	threads   int
-	queue     chan entryTest
-	handler   jobs.Handler
-	error     jobs.ErrorHandler
-}
-
-type entryTest struct {
-	id  string
-	job *jobs.Job
+	// !!IMPORTANT!! Number of threads equal to the redis.Pool max active connections !!IMPORTANT!!
+	threads int
+	handler jobs.Handler
+	error   jobs.ErrorHandler
 }
 
 // Init configures local job broker.
@@ -100,12 +97,20 @@ func (l *Redis) Handle(pipelines []*jobs.Pipeline, h jobs.Handler, f jobs.ErrorH
 
 // Serve local broker.
 func (l *Redis) Serve() error {
-	conn := l.pool.Get()
-	defer conn.Close()
-
 	for i := 0; i < l.threads; i++ {
+		// Get connection from the redis pool
+		conn := l.pool.Get()
+		// Count wg
 		l.Add(1)
-		go l.listen()
+		// Pass connection to the goroutine
+		go func(c redis.Conn) {
+			defer func() {
+				c.Close()
+			}()
+
+			// Blocks until wg.Done
+			l.listen()
+		}(conn)
 	}
 
 	l.Wait()
@@ -114,17 +119,13 @@ func (l *Redis) Serve() error {
 
 // Stop local broker.
 func (l *Redis) Stop() {
+	for i := 0; i < l.threads; i++ {
+		l.pool.Close()
+	}
 	err := l.pool.Close()
 
 	if err != nil {
 
-	}
-
-	l.Lock()
-	defer l.Unlock()
-
-	if l.queue != nil {
-		close(l.queue)
 	}
 }
 
@@ -134,15 +135,25 @@ func (l *Redis) Push(p *jobs.Pipeline, j *jobs.Job) (string, error) {
 
 	id := uuid.NewV4()
 
-	go func() {
-		l.queue <- entryTest{id: id.String(), job: j}
-	}()
+	b, err := j.Serialize()
+	if err != nil {
+		return "", err
+	}
 
+	// TODO DO we need reply from redis? It's could be useful
+	_, err = conn.Do("SET", id, b)
+	if err != nil {
+		return "", err
+	}
+
+	// return key
 	return id.String(), nil
 }
 
 func (l *Redis) listen() {
 	defer l.Done()
+	var job *jobs.Job
+
 	for q := range l.queue {
 		id, job := q.id, q.job
 
