@@ -1,9 +1,10 @@
 package jobs
 
 import (
+	"time"
+
 	"github.com/spiral/roadrunner"
 	"github.com/spiral/roadrunner/service"
-	"time"
 )
 
 // Config defines settings for job broker, workers and routing PipelineOptions.

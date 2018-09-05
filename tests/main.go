@@ -15,12 +15,8 @@ func main() {
 	rr.Container.Register(jobs.ID, jobs.NewService(rr.Logger, map[string]jobs.Broker{
 		"local":     &broker.Local{},
 		"beanstalk": &broker.Beanstalk{},
-		"redis": &broker.Redis{},
+		"redis":     &broker.Redis{},
 	}))
-
-
-	aa := broker.Redis{}
-	aa.Init()
 
 	rr.Logger.Formatter = &logrus.TextFormatter{ForceColors: true}
 	rr.Execute()

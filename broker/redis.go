@@ -1,9 +1,7 @@
 package broker
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -16,6 +14,9 @@ import (
 type Redis struct {
 	sync.Mutex
 	sync.WaitGroup
+	queues    int
+	cfg       *redisConfig
+	pipelines map[*jobs.Pipeline]*redisPipeline
 	namespace string
 	pool      *redis.Pool
 	// !!IMPORTANT!! Number of threads equal to the redis.Pool max active connections !!IMPORTANT!!
@@ -25,14 +26,28 @@ type Redis struct {
 }
 
 // Init configures local job broker.
-func (l *Redis) Init(cfg *RedisConfig) (bool, error) {
-	l.namespace = "spiral"
-	l.threads = 10
-	l.pool = newRedisPool(cfg.Address, l.threads, l.namespace)
+func (l *Redis) Init(cfg *redisConfig) (bool, error) {
+	if !cfg.Enable {
+		return false, nil
+	}
+	l.cfg = cfg
+	//
+	//// Hardcoded TODO
+	//l.namespace = "spiral"
+	//
+	//l.threads = 10
+	//l.pool = newRedisPool(cfg.Address, l.threads, l.namespace,)
 
 	cleanNamespace(l.namespace, l.pool)
+	l.createQueues(l.queues, l.cfg)
 
 	return true, nil
+}
+
+func (l *Redis) createQueues(queueNumber int, config *redisConfig) {
+	for i := 0; i < queueNumber; i ++ {
+		config.
+	}
 }
 
 func cleanNamespace(namespace string, pool *redis.Pool) {
@@ -52,23 +67,6 @@ func cleanNamespace(namespace string, pool *redis.Pool) {
 			// TODO create error message
 			panic(err)
 		}
-	}
-}
-
-func newRedisPool(address string, threads int, namespace string) *redis.Pool {
-	return &redis.Pool{
-		MaxActive:   threads,
-		MaxIdle:     10,
-		IdleTimeout: 10 * time.Second,
-		Dial: func() (redis.Conn, error) {
-			conn, err := redis.Dial("tcp", address)
-			if err != nil {
-				return nil, err
-			}
-
-			return conn, nil
-		},
-		Wait: true,
 	}
 }
 
