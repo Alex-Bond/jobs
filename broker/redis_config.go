@@ -31,7 +31,7 @@ type redisConfig struct {
 // RedisPipeline is redis specific pipeline
 type redisPipeline struct {
 	Listen  bool
-	Queues  []string
+	Queue   string
 	Mode    Mode
 	Timeout int
 }
@@ -62,7 +62,7 @@ func (m Mode) String() string {
 }
 
 // Hydrate populates config with values.
-func (c *RedisConfig) Hydrate(cfg service.Config) error {
+func (c *redisConfig) Hydrate(cfg service.Config) error {
 	return cfg.Unmarshal(&c)
 }
 
@@ -80,7 +80,7 @@ func (c *RedisConfig) Hydrate(cfg service.Config) error {
 //	return beanstalk.Dial(dsn[0], dsn[1])
 //}
 
-func (c *RedisConfig) Conn(address string, threads int, namespace string) *redis.Pool {
+func (c *redisConfig) Conn(address string, threads int, namespace string) *redis.Pool {
 	return &redis.Pool{
 		MaxActive:   c.Threads,
 		MaxIdle:     c.MaxIdleConnections,

@@ -12,17 +12,12 @@ import (
 
 // Redis run queue using redis pool.
 type Redis struct {
-	sync.Mutex
 	sync.WaitGroup
-	queues    int
 	cfg       *redisConfig
 	pipelines map[*jobs.Pipeline]*redisPipeline
-	namespace string
 	pool      *redis.Pool
-	// !!IMPORTANT!! Number of threads equal to the redis.Pool max active connections !!IMPORTANT!!
-	threads int
-	handler jobs.Handler
-	error   jobs.ErrorHandler
+	handler   jobs.Handler
+	error     jobs.ErrorHandler
 }
 
 // Init configures local job broker.
@@ -31,22 +26,16 @@ func (l *Redis) Init(cfg *redisConfig) (bool, error) {
 		return false, nil
 	}
 	l.cfg = cfg
-	//
-	//// Hardcoded TODO
-	//l.namespace = "spiral"
-	//
-	//l.threads = 10
-	//l.pool = newRedisPool(cfg.Address, l.threads, l.namespace,)
 
-	cleanNamespace(l.namespace, l.pool)
-	l.createQueues(l.queues, l.cfg)
+	cleanNamespace(l.cfg.Namespace, l.pool)
+	//l.createQueues(l.cfg., l.cfg)
 
 	return true, nil
 }
 
 func (l *Redis) createQueues(queueNumber int, config *redisConfig) {
-	for i := 0; i < queueNumber; i ++ {
-		config.
+	for i := 0; i < queueNumber; i++ {
+		//config.
 	}
 }
 
@@ -79,8 +68,8 @@ func (l *Redis) Handle(pipelines []*jobs.Pipeline, h jobs.Handler, f jobs.ErrorH
 		return nil
 
 	case len(pipelines) == 1:
-		l.threads = pipelines[0].Options.Integer("threads", 1)
-		if l.threads < 1 {
+		l.cfg.Threads = pipelines[0].Options.Integer("threads", 1)
+		if l.cfg.Threads < 1 {
 			return errors.New("local queue `thread` number must be 1 or higher")
 		}
 
@@ -95,20 +84,22 @@ func (l *Redis) Handle(pipelines []*jobs.Pipeline, h jobs.Handler, f jobs.ErrorH
 
 // Serve local broker.
 func (l *Redis) Serve() error {
-	for i := 0; i < l.threads; i++ {
+	for _, p := range l.pipelines {
 		// Get connection from the redis pool
 		conn := l.pool.Get()
 		// Count wg
 		l.Add(1)
 		// Pass connection to the goroutine
-		go func(c redis.Conn) {
-			defer func() {
-				c.Close()
-			}()
+		go func(c redis.Conn, pp *redisPipeline) {
+			if p.Listen {
+				defer func() {
+					c.Close()
+				}()
 
-			// Blocks until wg.Done
-			l.listen()
-		}(conn)
+				// Blocks until wg.Done
+				l.listen(pp)
+			}
+		}(conn, p)
 	}
 
 	l.Wait()
@@ -117,38 +108,37 @@ func (l *Redis) Serve() error {
 
 // Stop local broker.
 func (l *Redis) Stop() {
-	for i := 0; i < l.threads; i++ {
-		l.pool.Close()
-	}
-	err := l.pool.Close()
-
-	if err != nil {
-
-	}
+	l.pool.Close()
 }
 
 // Push new job to queue
 func (l *Redis) Push(p *jobs.Pipeline, j *jobs.Job) (string, error) {
+	// Get connection from the redis pool
 	conn := l.pool.Get()
 
+	// Generate new key
 	id := uuid.NewV4()
 
+	// Serialize job
 	b, err := j.Serialize()
 	if err != nil {
 		return "", err
 	}
 
-	// TODO DO we need reply from redis? It's could be useful
-	_, err = conn.Do("SET", id, b)
-	if err != nil {
-		return "", err
+	switch l.pipelines[p].Mode {
+	case fifo:
+		conn.Do("LPUSH", l.pipelines[p].Queue, b)
+	case lifo:
+		conn.Do("RPUSH", l.pipelines[p].Queue, b)
+	case broadcast:
+		//TODO for queues and SET
 	}
 
 	// return key
 	return id.String(), nil
 }
 
-func (l *Redis) listen() {
+func (l *Redis) listen(p *redisPipeline) {
 	defer l.Done()
 	var job *jobs.Job
 
