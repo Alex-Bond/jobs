@@ -53,7 +53,7 @@ func cleanNamespace(namespace string, pool *redis.Pool) {
 	conn := pool.Get()
 	defer conn.Close()
 
-	allKeysInNamespace := namespace + " *"
+	allKeysInNamespace := namespace + "*"
 
 	keys, err := redis.Strings(conn.Do("KEYS", allKeysInNamespace))
 	if err != nil {
@@ -64,7 +64,7 @@ func cleanNamespace(namespace string, pool *redis.Pool) {
 	for i := 0; i < len(keys); i++ {
 		if _, err := conn.Do("DEL", keys[i]); err != nil {
 			// TODO create error message
-			panic(err)
+			panic("could not delete:" + err.Error())
 		}
 	}
 }
@@ -139,13 +139,13 @@ func (l *Redis) Push(p *jobs.Pipeline, j *jobs.Job) (string, error) {
 
 	switch l.pipelines[p].Mode {
 	case fifo.String():
-		conn.Do("LPUSH", l.pipelines[p].Queue, b)
+		conn.Do("LPUSH", redisGeneralNamespace(l.pipelines[p].Queue), b)
 	case lifo.String():
-		conn.Do("RPUSH", l.pipelines[p].Queue, b)
+		conn.Do("RPUSH", redisGeneralNamespace(l.pipelines[p].Queue), b)
 	case broadcast.String():
 		for _, v := range l.pipelines {
 			go func(rp *redisPipeline, serJob []byte) {
-				conn.Do("LPUSH", v.Queue, serJob)
+				conn.Do("LPUSH", redisGeneralNamespace(l.pipelines[p].Queue), serJob)
 			}(v, b)
 		}
 	}
@@ -162,7 +162,7 @@ func (l *Redis) listen(p *redisPipeline) error {
 
 		default:
 			conn := l.pool.Get()
-			reply, err := conn.Do("BLPOP", time.Second * 10, p.Queue)
+			reply, err := conn.Do("BLPOP", time.Second*10, redisGeneralNamespace(p.Queue))
 			if err != nil {
 				return err
 			}

@@ -96,10 +96,10 @@ func (p *redisPipeline) checkConfig() error {
 
 func (c *redisConfig) Conn(address string, threads int, namespace string) *redis.Pool {
 	return &redis.Pool{
-		MaxActive:   c.Threads,
-		MaxIdle:     c.MaxIdleConnections,
+		MaxActive: c.Threads,
+		MaxIdle:   c.MaxIdleConnections,
 		// TODO rebuild
-		IdleTimeout:  time.Second * 20,
+		IdleTimeout: time.Second * 20,
 		Dial: func() (redis.Conn, error) {
 			conn, err := redis.Dial("tcp", c.Address)
 			if err != nil {
@@ -109,6 +109,17 @@ func (c *redisConfig) Conn(address string, threads int, namespace string) *redis
 			return conn, nil
 		},
 		Wait: true,
-
 	}
+}
+
+func redisNamespacePrefix(namespace string) string {
+	l := len(namespace)
+	if (l > 0) && (namespace[l-1] != ':') {
+		namespace = namespace + ":"
+	}
+	return namespace
+}
+
+func redisGeneralNamespace(namespace string) string {
+	return redisNamespacePrefix(namespace) + "general"
 }
