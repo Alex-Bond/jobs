@@ -2,6 +2,7 @@ module github.com/spiral/jobs
 
 require (
 	github.com/beanstalkd/go-beanstalk v0.0.0-20180822062812-53ecdaa3bcfb
+	github.com/go-redis/redis v6.14.1+incompatible
 	github.com/gomodule/redigo v2.0.0+incompatible
 	github.com/kr/beanstalk v0.0.0-20180818045031-cae1762e4858 // indirect
 	github.com/satori/go.uuid v1.2.0

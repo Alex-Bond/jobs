@@ -1,9 +1,14 @@
 package broker
 
 import (
+	"bytes"
+	"context"
+	"encoding/gob"
+	"encoding/json"
 	"errors"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/gomodule/redigo/redis"
 	"github.com/satori/go.uuid"
@@ -13,6 +18,10 @@ import (
 // Redis run queue using redis pool.
 type Redis struct {
 	sync.WaitGroup
+
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	cfg       *redisConfig
 	pipelines map[*jobs.Pipeline]*redisPipeline
 	pool      *redis.Pool
@@ -26,6 +35,7 @@ func (l *Redis) Init(cfg *redisConfig) (bool, error) {
 		return false, nil
 	}
 	l.cfg = cfg
+	l.ctx, l.cancel = context.WithCancel(context.Background())
 
 	cleanNamespace(l.cfg.Namespace, l.pool)
 	//l.createQueues(l.cfg., l.cfg)
@@ -43,7 +53,7 @@ func cleanNamespace(namespace string, pool *redis.Pool) {
 	conn := pool.Get()
 	defer conn.Close()
 
-	allKeysInNamespace := namespace + "*"
+	allKeysInNamespace := namespace + " *"
 
 	keys, err := redis.Strings(conn.Do("KEYS", allKeysInNamespace))
 	if err != nil {
@@ -109,6 +119,8 @@ func (l *Redis) Serve() error {
 // Stop local broker.
 func (l *Redis) Stop() {
 	l.pool.Close()
+	// Raise context cancel
+	l.cancel()
 }
 
 // Push new job to queue
@@ -126,44 +138,55 @@ func (l *Redis) Push(p *jobs.Pipeline, j *jobs.Job) (string, error) {
 	}
 
 	switch l.pipelines[p].Mode {
-	case fifo:
+	case fifo.String():
 		conn.Do("LPUSH", l.pipelines[p].Queue, b)
-	case lifo:
+	case lifo.String():
 		conn.Do("RPUSH", l.pipelines[p].Queue, b)
-	case broadcast:
-		//TODO for queues and SET
+	case broadcast.String():
+		for _, v := range l.pipelines {
+			go func(rp *redisPipeline, serJob []byte) {
+				conn.Do("LPUSH", v.Queue, serJob)
+			}(v, b)
+		}
 	}
 
 	// return key
 	return id.String(), nil
 }
 
-func (l *Redis) listen(p *redisPipeline) {
-	defer l.Done()
-	var job *jobs.Job
+func (l *Redis) listen(p *redisPipeline) error {
+	for {
+		select {
+		case <-l.ctx.Done():
+			return errors.New("context done")
 
-	for q := range l.queue {
-		id, job := q.id, q.job
+		default:
+			conn := l.pool.Get()
+			reply, err := conn.Do("BLPOP", time.Second * 10, p.Queue)
+			if err != nil {
+				return err
+			}
 
-		if job.Options.Delay != 0 {
-			time.Sleep(job.Options.DelayDuration())
+			var buf bytes.Buffer
+			enc := gob.NewEncoder(&buf)
+			err = enc.Encode(reply)
+			if err != nil {
+				return err
+			}
+
+			j := jobs.Job{}
+			if err := json.Unmarshal(buf.Bytes(), &j); err != nil {
+				return err
+			}
+			l.handler("test", &j)
 		}
-
-		// local broker does not support job timeouts yet
-		err := l.handler(id, job)
-		if err == nil {
-			continue
-		}
-
-		if !job.CanRetry() {
-			l.error(id, job, err)
-			continue
-		}
-
-		if job.Options.RetryDelay != 0 {
-			time.Sleep(job.Options.RetryDuration())
-		}
-
-		l.queue <- entryTest{id: id, job: job}
 	}
+}
+
+// FromInterfaceToBytes
+//Benchmark_Fun-8   	2000000000	         0.63 ns/op	       0 B/op	       0 allocs/op
+func FromInterfaceToBytes(intr interface{}) []byte {
+	p := *(*interface{})(unsafe.Pointer(&intr))
+	b := p.([]byte)
+	return b
 }

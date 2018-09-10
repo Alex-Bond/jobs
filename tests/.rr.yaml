@@ -22,6 +22,32 @@ jobs:
       broker:  beanstalk
       listen:  true
 
+    valery:
+      broker: redis
+      listen: true
+      options:
+            queue: default
+            threads: 1
+
+    valery2:
+      broker: redis
+      listen: true
+      options:
+        queue: default
+        threads: 1
+
+
+    valery3:
+      broker: redis
+      options:
+        queue: default2
+        threads: 1
+
+    valery4:
+      broker: redis
+      options:
+
+
   # list of active endpoints and broker consumers
   brokers:
     beanstalk:

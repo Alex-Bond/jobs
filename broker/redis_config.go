@@ -1,9 +1,11 @@
 package broker
 
 import (
+	"errors"
 	"time"
 
 	"github.com/gomodule/redigo/redis"
+	"github.com/spiral/jobs"
 	"github.com/spiral/roadrunner/service"
 )
 
@@ -25,14 +27,14 @@ type redisConfig struct {
 	Namespace string
 
 	// Close connection after remaining idle for this duration
-	IdleTimeout time.Duration
+	IdleTimeout int
 }
 
 // RedisPipeline is redis specific pipeline
 type redisPipeline struct {
 	Listen  bool
 	Queue   string
-	Mode    Mode
+	Mode    string
 	Timeout int
 }
 
@@ -48,9 +50,9 @@ const (
 // String is used to convert modes from int to string names
 func (m Mode) String() string {
 	modes := [...]string{
-		"Fifo",
-		"Lifo",
-		"Broadcast",
+		"fifo",
+		"lifo",
+		"broadcast",
 	}
 
 	if m < fifo || m > broadcast {
@@ -66,25 +68,38 @@ func (c *redisConfig) Hydrate(cfg service.Config) error {
 	return cfg.Unmarshal(&c)
 }
 
-// Listener creates new rpc socket Listener.
-//func (c *RedisConfig) Conn() (*beanstalk.Conn, error) {
-//	dsn := strings.Split(c.Address, "://")
-//	if len(dsn) != 2 {
-//		return nil, errors.New("invalid socket DSN (tcp://:6001, unix://rpc.sock)")
-//	}
-//
-//	if dsn[0] == "unix" {
-//		syscall.Unlink(dsn[1])
-//	}
-//
-//	return beanstalk.Dial(dsn[0], dsn[1])
-//}
+func createPipline(p *jobs.Pipeline) (*redisPipeline, error) {
+	rp := &redisPipeline{
+		Listen:  p.Listen,
+		Queue:   p.Options.String("queue", ""),
+		Mode:    p.Options.String("mode", fifo.String()),
+		Timeout: p.Options.Integer("timeout", 10),
+	}
+	if err := rp.checkConfig(); err != nil {
+		return nil, err
+	}
+
+	return rp, nil
+}
+
+func (p *redisPipeline) checkConfig() error {
+	if p.Queue == "" {
+		return errors.New("missing or incorrect queue for redis pipeline")
+	}
+
+	if p.Mode == "Unknown" {
+
+	}
+
+	return nil
+}
 
 func (c *redisConfig) Conn(address string, threads int, namespace string) *redis.Pool {
 	return &redis.Pool{
 		MaxActive:   c.Threads,
 		MaxIdle:     c.MaxIdleConnections,
-		IdleTimeout: c.IdleTimeout,
+		// TODO rebuild
+		IdleTimeout:  time.Second * 20,
 		Dial: func() (redis.Conn, error) {
 			conn, err := redis.Dial("tcp", c.Address)
 			if err != nil {
@@ -94,5 +109,6 @@ func (c *redisConfig) Conn(address string, threads int, namespace string) *redis
 			return conn, nil
 		},
 		Wait: true,
+
 	}
 }
